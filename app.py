@@ -1,21 +1,60 @@
-# app.py
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import mysql.connector
 import os
 import jwt
-import datetime
+from functools import wraps
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'muda_isto_para_uma_chave_secreta_bem_forte'
+CORS(app)
+
+# Configurações secretas e DB
+SECRET_KEY = os.getenv('JWT_SECRET', 'troca_isto_por_algo_seguro')
+
+host = os.getenv("MYSQLHOST", "localhost")
+user = os.getenv("MYSQLUSER", "root")
+password = os.getenv("MYSQLPASSWORD", "")
+database = os.getenv("MYSQLDATABASE", "testdb")
+port = int(os.getenv("MYSQLPORT", 3306))
 
 def get_db_connection():
     return mysql.connector.connect(
-        host=os.getenv("MYSQLHOST", "localhost"),
-        user=os.getenv("MYSQLUSER", "root"),
-        password=os.getenv("MYSQLPASSWORD", ""),
-        database=os.getenv("MYSQLDATABASE", "testdb"),
-        port=int(os.getenv("MYSQLPORT", 3306))
+        host=host,
+        user=user,
+        password=password,
+        database=database,
+        port=port
     )
+
+# Middleware para proteger rotas com JWT
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+
+        # Pega token do header Authorization: Bearer token
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == 'bearer':
+                token = parts[1]
+
+        if not token:
+            return jsonify({'message': 'Token em falta'}), 401
+
+        try:
+            data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            current_user = data['username']
+        except Exception as e:
+            return jsonify({'message': 'Token inválido ou expirado'}), 401
+
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+@app.route('/')
+def home():
+    return "API a correr"
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -25,36 +64,28 @@ def login():
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, password_input))
+    query = "SELECT * FROM users WHERE username = %s AND password = %s"
+    cursor.execute(query, (username, password_input))
     user = cursor.fetchone()
     cursor.close()
     conn.close()
 
-    if user:
-        token = jwt.encode({
-            'user_id': user['id'],
-            'username': user['username'],
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-        }, app.config['SECRET_KEY'], algorithm='HS256')
+    if not user:
+        return jsonify({"message": "Login falhou"}), 401
 
-        user.pop('password', None)  # tira a password do JSON
-        return jsonify({"message": "Login OK", "token": token, "user": user})
-    return jsonify({"message": "Login falhou"}), 401
+    # Criar token JWT válido por 30 min
+    token = jwt.encode({
+        'username': username,
+        'exp': datetime.utcnow() + timedelta(minutes=30)
+    }, SECRET_KEY, algorithm="HS256")
 
-@app.route('/dados', methods=['GET'])
-def dados():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header:
-        return jsonify({"message": "Token em falta"}), 401
+    return jsonify({"token": token})
 
-    try:
-        token = auth_header.split()[1]
-        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-        # Se quiseres, podes usar payload['user_id'] para buscar dados específicos
+# Rota protegida - só funciona com token válido
+@app.route('/perfil', methods=['GET'])
+@token_required
+def perfil(current_user):
+    return jsonify({"message": f"Bem-vindo {current_user} à área protegida!"})
 
-        return jsonify({"data": f"Olá {payload['username']}, esta info está protegida."})
-    except Exception:
-        return jsonify({"message": "Token inválido"}), 401
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
