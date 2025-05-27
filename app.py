@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import mysql.connector
-import os
 import jwt
 from functools import wraps
 from datetime import datetime, timedelta
@@ -9,31 +8,24 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 CORS(app)
 
-# Configurações secretas e DB
-SECRET_KEY = os.getenv('JWT_SECRET', 'RPViana2005RPViana2005RPViana2005')
-
-host = os.getenv("MYSQLHOST", "localhost")
-user = os.getenv("MYSQLUSER", "root")
-password = os.getenv("MYSQLPASSWORD", "")
-database = os.getenv("MYSQLDATABASE", "testdb")
-port = int(os.getenv("MYSQLPORT", 3306))
+# Chave secreta para JWT
+SECRET_KEY = 'RPViana2005RPViana2005RPViana2005'
 
 def get_db_connection():
     return mysql.connector.connect(
-        host=host,
-        user=user,
-        password=password,
-        database=database,
-        port=port
+        host="ballast.proxy.rlwy.net",
+        user="root",
+        password="UwKvnlVfgniKIZBTMGdSUxqTCzCVexzp",
+        database="railway",
+        port=11454
     )
 
-# Middleware para proteger rotas com JWT
+# Middleware para verificar token JWT
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
 
-        # Pega token do header Authorization: Bearer token
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
             parts = auth_header.split()
@@ -46,7 +38,7 @@ def token_required(f):
         try:
             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
             current_user = data['username']
-        except Exception as e:
+        except Exception:
             return jsonify({'message': 'Token inválido ou expirado'}), 401
 
         return f(current_user, *args, **kwargs)
@@ -73,7 +65,6 @@ def login():
     if not user:
         return jsonify({"message": "Login falhou"}), 401
 
-    # Criar token JWT válido por 30 min
     token = jwt.encode({
         'username': username,
         'exp': datetime.utcnow() + timedelta(minutes=30)
@@ -81,7 +72,6 @@ def login():
 
     return jsonify({"token": token})
 
-# Rota protegida - só funciona com token válido
 @app.route('/perfil', methods=['GET'])
 @token_required
 def perfil(current_user):
