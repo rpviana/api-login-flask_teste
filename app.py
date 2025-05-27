@@ -10,7 +10,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configurações secretas e DB
-SECRET_KEY = os.getenv('JWT_SECRET', 'troca_isto_por_algo_seguro')
+SECRET_KEY = os.getenv('JWT_SECRET', 'RPViana2005RPViana2005RPViana2005')
 
 host = os.getenv("MYSQLHOST", "localhost")
 user = os.getenv("MYSQLUSER", "root")
